@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Dashboard — Inventory IMS</title>
+    <link rel="stylesheet" href="css/main.css" />
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+</head>
+<body>
+
+<!-- ── Navigation ──────────────────────────────────────────── -->
+<nav class="navbar">
+    <div class="navbar-brand">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/>
+        </svg>
+        Inventory IMS
+    </div>
+    <div class="navbar-links">
+        <a href="index.html" class="active">Dashboard</a>
+        <a href="products.html">Products</a>
+        <a href="analytics.html">Analytics</a>
+    </div>
+</nav>
+
+<!-- ── Page ─────────────────────────────────────────────────── -->
+<main class="page">
+    <div class="page-header">
+        <h1>Dashboard</h1>
+        <p>Real-time overview of your inventory health</p>
+    </div>
+
+    <!-- KPI Cards -->
+    <div class="kpi-grid" id="kpiGrid">
+        <div class="loading-center" style="grid-column: 1/-1">
+            <div class="spinner"></div>
+        </div>
+    </div>
+
+    <!-- Low Stock Alert -->
+    <div id="lowStockAlert"></div>
+
+    <!-- Charts Row -->
+    <div class="grid-2" style="margin-bottom: 20px;">
+        <div class="card">
+            <div class="card-header"><h2>Stock Status Distribution</h2></div>
+            <div class="card-body" style="height:260px; display:flex; align-items:center; justify-content:center;">
+                <canvas id="stockChart"></canvas>
+            </div>
+        </div>
+        <div class="card">
+            <div class="card-header"><h2>Inventory Value by Category</h2></div>
+            <div class="card-body" style="height:260px;">
+                <canvas id="categoryChart"></canvas>
+            </div>
+        </div>
+    </div>
+
+    <!-- Recent Products -->
+    <div class="card">
+        <div class="card-header">
+            <h2>Recently Added Products</h2>
+            <a href="products.html" class="btn btn-ghost btn-sm">View All →</a>
+        </div>
+        <div class="card-body" id="recentProducts">
+            <div class="loading-center"><div class="spinner"></div></div>
+        </div>
+    </div>
+</main>
+
+<!-- Toast container -->
+<div class="toast-container" id="toastContainer"></div>
+
+<script type="module">
+import { AnalyticsAPI, ProductAPI } from './js/api.js';
+import { showToast, badgeHTML, formatCurrency } from './js/utils.js';
+
+async function loadDashboard() {
+    try {
+        const [summary, recent] = await Promise.all([
+            AnalyticsAPI.getSummary(),
+            AnalyticsAPI.getRecent(30)
+        ]);
+        renderKPIs(summary);
+        renderLowStockAlert(summary);
+        renderStockChart(summary);
+        renderCategoryChart(summary.categoryStats);
+        renderRecentProducts(recent);
+    } catch (e) {
+        showToast('Failed to load dashboard data', 'error');
+        console.error(e);
+    }
+}
+
+function renderKPIs(s) {
+    document.getElementById('kpiGrid').innerHTML = `
+        <div class="kpi-card primary">
+            <div class="kpi-label">Total Products</div>
+            <div class="kpi-value">${s.totalProducts}</div>
+            <div class="kpi-sub">${s.totalCategories} categories</div>
+        </div>
+        <div class="kpi-card success">
+            <div class="kpi-label">Inventory Value</div>
+            <div class="kpi-value">${formatCurrency(s.totalInventoryValue)}</div>
+            <div class="kpi-sub">Total stock value</div>
+        </div>
+        <div class="kpi-card danger">
+            <div class="kpi-label">Low Stock</div>
+            <div class="kpi-value">${s.lowStockCount}</div>
+            <div class="kpi-sub">Needs restocking</div>
+        </div>
+        <div class="kpi-card warning">
+            <div class="kpi-label">Medium Stock</div>
+            <div class="kpi-value">${s.mediumStockCount}</div>
+            <div class="kpi-sub">Monitor closely</div>
+        </div>
+    `;
+}
+
+function renderLowStockAlert(s) {
+    const el = document.getElementById('lowStockAlert');
+    if (s.lowStockCount === 0) { el.innerHTML = ''; return; }
+    ProductAPI.getLowStock().then(products => {
+        const items = products.map(p =>
+            `<div class="alert-item">
+                <span>${p.name}</span>
+                <span class="qty">${p.quantity} left</span>
+            </div>`
+        ).join('');
+        el.innerHTML = `
+            <div class="alert-panel">
+                <h3>⚠ Low Stock Alert — ${s.lowStockCount} product(s) need restocking</h3>
+                <div class="alert-items">${items}</div>
+            </div>`;
+    });
+}
+
+function renderStockChart(s) {
+    new Chart(document.getElementById('stockChart'), {
+        type: 'doughnut',
+        data: {
+            labels: ['Normal', 'Medium', 'Low Stock'],
+            datasets: [{
+                data: [s.normalStockCount, s.mediumStockCount, s.lowStockCount],
+                backgroundColor: ['#27AE60', '#E67E22', '#C0392B'],
+                borderWidth: 2,
+                borderColor: '#fff'
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: { legend: { position: 'bottom' } },
+            cutout: '60%'
+        }
+    });
+}
+
+function renderCategoryChart(cats) {
+    if (!cats || !cats.length) return;
+    new Chart(document.getElementById('categoryChart'), {
+        type: 'bar',
+        data: {
+            labels: cats.map(c => c.category),
+            datasets: [{
+                label: 'Inventory Value ($)',
+                data: cats.map(c => parseFloat(c.totalValue)),
+                backgroundColor: '#2E6DA4CC',
+                borderRadius: 4
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            indexAxis: 'y',
+            plugins: { legend: { display: false } },
+            scales: { x: { ticks: { callback: v => '$' + v.toLocaleString() } } }
+        }
+    });
+}
+
+function renderRecentProducts(products) {
+    if (!products.length) {
+        document.getElementById('recentProducts').innerHTML = '<p style="color:var(--text-muted);text-align:center;padding:24px">No recent products.</p>';
+        return;
+    }
+    const rows = products.slice(0, 8).map(p => `
+        <tr>
+            <td>${p.name}</td>
+            <td>${p.category}</td>
+            <td>${formatCurrency(p.price)}</td>
+            <td>${p.quantity}</td>
+            <td>${badgeHTML(p.stockStatus)}</td>
+        </tr>`).join('');
+    document.getElementById('recentProducts').innerHTML = `
+        <div class="table-wrap">
+            <table>
+                <thead><tr><th>Name</th><th>Category</th><th>Price</th><th>Qty</th><th>Status</th></tr></thead>
+                <tbody>${rows}</tbody>
+            </table>
+        </div>`;
+}
+
+loadDashboard();
+</script>
+</body>
+</html>
