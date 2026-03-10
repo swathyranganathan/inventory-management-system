@@ -3,7 +3,7 @@
 // All HTTP calls go through here. Change BASE_URL once for all pages.
 // ============================================================
 
-const BASE_URL = 'http://localhost:8080/api';
+const BASE_URL = "https://inventory-management-system-cojf.onrender.com/api";
 
 // ── Generic fetch wrapper ────────────────────────────────────
 async function apiFetch(path, options = {}) {
